@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { Construct } from 'constructs';
 
 export class MyVpcAppStack extends cdk.Stack {
@@ -14,6 +15,10 @@ export class MyVpcAppStack extends cdk.Stack {
 cdk synth
 cdk deploy
 cdk destroy
+
+Manual Stuff:
+- Security Group
+
 
 1. VPC
 
@@ -65,13 +70,14 @@ cdk destroy
 
 // ------------------------------------ Public
 
-    // Define availability zones and CIDR blocks for each private subnet
+// Define availability zones and CIDR blocks for each private subnet
     const publicsubnetConfigs = [
       { availabilityZone: 'eu-central-1a', cidrBlock: '10.0.6.0/24' },
       { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.7.0/24' },
     ];
 
 // 2.1 Public Subnet 1
+loop
     const publicSubnet = new ec2.Subnet(this, 'MyPublicSubnet', {
       vpcId: vpc.vpcId,            // Verweise auf die VPC
       cidrBlock: '10.0.8.0/24',    // CIDR für das Subnetz
@@ -99,6 +105,7 @@ cdk destroy
     });
 
 // 2.3 Associate the Public Route Table with each Public Subnet - loop
+check loop
     vpc.publicSubnets.forEach((subnet, index) => {
       new ec2.CfnSubnetRouteTableAssociation(this, `PublicSubnetRouteTableAssoc${index}`, {
         subnetId: subnet.subnetId,
@@ -122,14 +129,13 @@ cdk destroy
 
 // ------------------------------------ Private
 
-    // Define availability zones and CIDR blocks for each private subnet
+// Define availability zones and CIDR blocks for each private subnet
     const privatesubnetConfigs = [
       { availabilityZone: 'eu-central-1a', cidrBlock: '10.0.6.0/24' },
       { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.7.0/24' },
     ];
 
 // 3.1 Private Subnets
-    // --- First loop: Create subnets ---
     const privateSubnets: ec2.Subnet[] = [];  // To store created subnets
     privatesubnetConfigs.forEach((config, index) => {
       const privateSubnet = new ec2.Subnet(this, `PrivateSubnet_${index + 1}`, {
@@ -137,11 +143,11 @@ cdk destroy
         cidrBlock: config.cidrBlock,
         availabilityZone: config.availabilityZone,
       });
-      // Store the subnet in the array for later use
-      privateSubnets.push(privateSubnet);
+      privateSubnets.push(privateSubnet); // Store the subnet in the array for later use
     });
 
 // 3.2 NAT Gateway 1
+loop
     // Allocate an Elastic IP for the NAT Gateway
     const natElasticIp = new ec2.CfnEIP(this, 'NatEip', {
       domain: 'vpc',
@@ -156,6 +162,7 @@ cdk destroy
     });
 
 // 3.3 Route Table - loop
+check loop
     // Create a route in each private subnet route table to use the NAT Gateway for outbound internet traffic
     vpc.privateSubnets.forEach((privateSubnet, index) => {
       const privateRouteTable = privateSubnet.routeTable;
@@ -180,9 +187,7 @@ cdk destroy
       generation: ec2.AmazonLinuxGeneration.AMAZON_LINUX_2023,
     });
 
-    // --- Second loop: Create EC2 instances ---
     privateSubnets.forEach((privateSubnet, index) => {
-      // Create EC2 instance in the private subnet
       new ec2.Instance(this, `Instance${index + 1}`, {
         vpc,
         instanceType: ec2.InstanceType.of(ec2.InstanceClass.T2, ec2.InstanceSize.MICRO),
@@ -198,7 +203,45 @@ cdk destroy
 
 // ------------------------------------ Loadbalancer
 
+// Create an Application Load Balancer (ALB) in the public subnets
+    const alb = new elbv2.ApplicationLoadBalancer(this, 'MyALB', {
+      vpc,
+      internetFacing: true,  // ALB is publicly accessible
+      loadBalancerName: 'MyALB',  // Name of the ALB
+    });
 
+// Create an HTTP listener on the ALB (port 80)
+    const listener = alb.addListener('HttpListener', {
+      port: 80,
+      open: true,  // Allow inbound HTTP traffic on port 80
+    });
+
+// Create a Target Group for HTTP (for EC2 instances)
+    const targetGroup = new elbv2.ApplicationTargetGroup(this, 'MyTargetGroup', {
+      vpc,
+      protocol: elbv2.ApplicationProtocol.HTTP,  // Use HTTP protocol
+      port: 80,  // Target port for instances
+      healthCheck: {
+        path: '/',  // Health check path
+        interval: cdk.Duration.seconds(30),
+      },
+    });
+
+// Attach the target group to the HTTP listener
+    listener.addTargetGroups('AddTargetGroup', {
+      targetGroups: [targetGroup],
+    });
+
+// Define EC2 instance creation in private subnet (as an example)
+    const instance = new ec2.Instance(this, 'MyInstance', {
+      vpc,
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T2, ec2.InstanceSize.MICRO),
+      machineImage: new ec2.AmazonLinuxImage(),
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC }, // Place the instance in a public subnet
+    });
+
+// Register the EC2 instance with the target group
+    targetGroup.addTarget(instance); // Register EC2 instance as a target for the target group
 
 
 
