@@ -65,64 +65,74 @@ Manual Stuff:
 */
 // ------------------------------------ VPC
 
-// 1. VPC new
+// VPC new
     //const vpc = new ec2.Vpc(this, 'MyCustomVpc', {
     //  cidr: '10.0.0.0/16',
     //});
 
-// 1. VPC existing 
+// VPC existing 
     const vpc = ec2.Vpc.fromLookup(this, 'MyExistingVpc', {
       vpcId: 'vpc-05d64cdbb3ad8727c', // Replace with your VPC ID
       region: 'eu-central-1',         // Specify the region if needed
     });
-
 // ------------------------------------ Public
 
-// 2.1 Define availability zones and CIDR blocks for each private subnet
+    // Define availability zones and CIDR blocks for each public subnet
     const PublicSubnetConfigs = [
       { availabilityZone: 'eu-central-1a', cidrBlock: '10.0.1.0/24' },
       { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.4.0/24' },
     ];
 
-// 2.2 Public Subnets
-    const publicSubnets: ec2.Subnet[] = [];  // To store created subnets
-    PublicSubnetConfigs.forEach((config, index) => {
-      const PublicSubnet = new ec2.Subnet(this, `PublicSubnet_${index + 1}`, {
-        vpcId: vpc.vpcId,
-        cidrBlock: config.cidrBlock,
-        availabilityZone: config.availabilityZone,
-        mapPublicIpOnLaunch: true
-      });
-      publicSubnets.push(PublicSubnet);      // Store the subnet in the array for later use
-    });
-
-// 2.3 Internet-Gateway
+    // Internet Gateway
     const internetGateway = new ec2.CfnInternetGateway(this, 'InternetGateway');
     new ec2.CfnVPCGatewayAttachment(this, 'AttachGateway', {
       vpcId: vpc.vpcId,
       internetGatewayId: internetGateway.ref,
     });
 
-// 2.4 Route Table for Public Subnets
+    // Route Table for public subnets with a default route to the Internet Gateway
     const publicRouteTable = new ec2.CfnRouteTable(this, 'PublicRouteTable', {
       vpcId: vpc.vpcId,
+      tags: [
+        {
+          key: 'Name',
+          value: 'PublicRouteTableToNAT',  // Specify the name you want to assign
+        },
+      ],
     });
 
-    // Add a Route to the Internet Gateway in the Route Table
     new ec2.CfnRoute(this, 'PublicSubnetRouteTarget', {
       routeTableId: publicRouteTable.ref,
-      destinationCidrBlock: '0.0.0.0/0',  // Route for all traffic
-      gatewayId: internetGateway.ref,     // Target is the Internet Gateway
+      destinationCidrBlock: '0.0.0.0/0',   // Route for all outbound traffic
+      gatewayId: internetGateway.ref,      // Direct to Internet Gateway
     });
 
-    // Associate the Route Table with each Public Subnet
-    publicSubnets.forEach((subnet, index) => {
+    // Create Public Subnets and associate them with the Route Table
+    const publicSubnets = PublicSubnetConfigs.map((config, index) => {
+      // Create Public Subnet
+      const publicSubnet = new ec2.CfnSubnet(this, `PublicSubnet_${index + 1}`, {
+        vpcId: vpc.vpcId,
+        cidrBlock: config.cidrBlock,
+        availabilityZone: config.availabilityZone,
+        mapPublicIpOnLaunch: true, // Auto-assign public IPs to instances in the subnet
+        tags: [
+          {
+            key: 'Name',
+            value: `PublicSubnet_${index + 1}`,
+          },
+        ],
+      });
+
+      // Associate each Public Subnet with the public Route Table
       new ec2.CfnSubnetRouteTableAssociation(this, `PublicSubnetRouteTableAssoc_${index + 1}`, {
-        subnetId: subnet.subnetId,
+        subnetId: publicSubnet.ref,
         routeTableId: publicRouteTable.ref,
       });
+
+      return publicSubnet; // Store each created subnet in the array
     });
 
+/* 
 // 2.5 Security Group that allows all inbound and outbound traffic
     const securityGroup = new ec2.SecurityGroup(this, 'AllowAllTrafficSG', {
       vpc,
@@ -266,6 +276,8 @@ Manual Stuff:
       port: 80,                            // Listening on port 80 for HTTP traffic
       defaultTargetGroups: [targetGroup],  // Route traffic to the target group
     });
+
+ */
 
   }
 }
