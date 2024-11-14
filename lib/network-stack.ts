@@ -3,6 +3,8 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { Construct } from 'constructs';
+import * as elbv2_targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
+
 
 export class MyVpcAppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -193,8 +195,9 @@ Manual Stuff:
       generation: ec2.AmazonLinuxGeneration.AMAZON_LINUX_2023,
     });
 
+    const instances: ec2.Instance[] = [];
     privateSubnets.forEach((privateSubnet, index) => {
-      new ec2.Instance(this, `Instance${index + 1}`, {
+      const instance = new ec2.Instance(this, `Instance${index + 1}`, {
         vpc,
         instanceType: ec2.InstanceType.of(ec2.InstanceClass.T2, ec2.InstanceSize.MICRO),
         machineImage: ami,
@@ -205,6 +208,8 @@ Manual Stuff:
         securityGroup: securityGroup,
         role: instanceRole_x,
       });
+      // Save instance in the array for later use
+      instances.push(instance);
     });
 
 // ------------------------------------ Loadbalancer
@@ -216,40 +221,45 @@ Manual Stuff:
       loadBalancerName: 'MyALB',  // Name of the ALB
     });
 
-// Create an HTTP listener on the ALB (port 80)
-    const listener = alb.addListener('HttpListener', {
-      port: 80,
-      open: true,  // Allow inbound HTTP traffic on port 80
+// Define a security group for the ALB to allow internal HTTP traffic
+    const albSecurityGroup = new ec2.SecurityGroup(this, 'InternalALBSecurityGroup', {
+      vpc,
+      allowAllOutbound: true,
+      description: 'Allow internal HTTP traffic to ALB',
     });
+
+    // Allow inbound HTTP (port 80) traffic only from within the VPC CIDR range
+    albSecurityGroup.addIngressRule(
+      ec2.Peer.ipv4(vpc.vpcCidrBlock),  // Restrict access to within the VPC
+      ec2.Port.tcp(80),
+      'Allow HTTP traffic from within VPC'
+    );
+
+    // Attach the security group to the ALB
+    alb.addSecurityGroup(albSecurityGroup);
 
 // Create a Target Group for HTTP (for EC2 instances)
     const targetGroup = new elbv2.ApplicationTargetGroup(this, 'MyTargetGroup', {
       vpc,
-      protocol: elbv2.ApplicationProtocol.HTTP,  // Use HTTP protocol
       port: 80,  // Target port for instances
+      protocol: elbv2.ApplicationProtocol.HTTP,  // Use HTTP protocol
+      targetType: elbv2.TargetType.INSTANCE,
       healthCheck: {
         path: '/',  // Health check path
         interval: cdk.Duration.seconds(30),
       },
     });
 
-// Attach the target group to the HTTP listener
-    listener.addTargetGroups('AddTargetGroup', {
-      targetGroups: [targetGroup],
+    // Register each EC2 instance in the private subnets as a target
+    instances.forEach((instance, index) => {
+      targetGroup.addTarget(new elbv2_targets.InstanceIdTarget(instance.instanceId));
     });
 
-// Define EC2 instance creation in private subnet (as an example)
-    const instance = new ec2.Instance(this, 'MyInstance', {
-      vpc,
-      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T2, ec2.InstanceSize.MICRO),
-      machineImage: new ec2.AmazonLinuxImage(),
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC }, // Place the instance in a public subnet
+// Add a listener on port 80 for the internal ALB
+    const listener = alb.addListener('InternalListener', {
+      port: 80,                       // Listening on port 80 for HTTP traffic
+      defaultTargetGroups: [targetGroup],  // Route traffic to the target group
     });
-
-// Register the EC2 instance with the target group
-    targetGroup.addTarget(instance); // Register EC2 instance as a target for the target group
-
-
 
   }
 }
