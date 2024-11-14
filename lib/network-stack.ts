@@ -7,7 +7,7 @@ import { Construct } from 'constructs';
 export class MyVpcAppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
-    const availabilityZones = ['eu-central-1a', 'eu-central-1b', 'eu-central-1c'];
+    //const availabilityZones = ['eu-central-1a', 'eu-central-1b', 'eu-central-1c'];
 
 // ------------------------------------ Network
 /*
@@ -17,6 +17,7 @@ cdk deploy
 cdk destroy
 
 Manual Stuff:
+- VPC
 - Security Group
 
 
@@ -71,18 +72,21 @@ Manual Stuff:
 // ------------------------------------ Public
 
 // Define availability zones and CIDR blocks for each private subnet
-    const publicsubnetConfigs = [
-      { availabilityZone: 'eu-central-1a', cidrBlock: '10.0.6.0/24' },
-      { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.7.0/24' },
+    const PublicSubnetConfigs = [
+      { availabilityZone: 'eu-central-1a', cidrBlock: '10.0.1.0/24' },
+      { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.4.0/24' },
     ];
 
 // 2.1 Public Subnet 1
-loop
-    const publicSubnet = new ec2.Subnet(this, 'MyPublicSubnet', {
-      vpcId: vpc.vpcId,            // Verweise auf die VPC
-      cidrBlock: '10.0.8.0/24',    // CIDR für das Subnetz
-      availabilityZone: availabilityZones[0],  // Verfügbare Zone
-      mapPublicIpOnLaunch: true,   // Öffentliche IPs für Instanzen
+    const publicSubnets: ec2.Subnet[] = [];  // To store created subnets
+    PublicSubnetConfigs.forEach((config, index) => {
+      const PublicSubnet = new ec2.Subnet(this, `PublicSubnet_${index + 1}`, {
+        vpcId: vpc.vpcId,
+        cidrBlock: config.cidrBlock,
+        availabilityZone: config.availabilityZone,
+        mapPublicIpOnLaunch: true
+      });
+      publicSubnets.push(PublicSubnet); // Store the subnet in the array for later use
     });
 
 // 2.2 Internet-Gateway
@@ -97,17 +101,16 @@ loop
       vpcId: vpc.vpcId,
     });
 
-// 2.3 Add a Route to the Internet Gateway in the Public Route Table
+// 2.3 Add a Route to the Internet Gateway in the Route Table
     new ec2.CfnRoute(this, 'PublicSubnetRoute', {
       routeTableId: publicRouteTable.ref,
       destinationCidrBlock: '0.0.0.0/0',  // Route for all traffic
-      gatewayId: internetGateway.ref,      // Target is the Internet Gateway
+      gatewayId: internetGateway.ref,     // Target is the Internet Gateway
     });
 
-// 2.3 Associate the Public Route Table with each Public Subnet - loop
-check loop
+// 2.3 Associate the Route Table with each Public Subnet
     vpc.publicSubnets.forEach((subnet, index) => {
-      new ec2.CfnSubnetRouteTableAssociation(this, `PublicSubnetRouteTableAssoc${index}`, {
+      new ec2.CfnSubnetRouteTableAssociation(this, `PublicSubnetRouteTableAssoc_${index + 1}`, {
         subnetId: subnet.subnetId,
         routeTableId: publicRouteTable.ref,
       });
@@ -129,48 +132,51 @@ check loop
 
 // ------------------------------------ Private
 
-// Define availability zones and CIDR blocks for each private subnet
-    const privatesubnetConfigs = [
-      { availabilityZone: 'eu-central-1a', cidrBlock: '10.0.6.0/24' },
-      { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.7.0/24' },
+// Define configurations for private subnets (availability zones and CIDR blocks)
+    const PrivateSubnetConfigs = [
+      { availabilityZone: 'eu-central-1a', cidrBlock: '10.0.2.0/24' },
+      { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.5.0/24' },
     ];
 
-// 3.1 Private Subnets
-    const privateSubnets: ec2.Subnet[] = [];  // To store created subnets
-    privatesubnetConfigs.forEach((config, index) => {
+// 3.2 Create a NAT Gateway in each Public Subnet and allocate an Elastic IP
+    // Define an array to hold the NAT Gateways for each public subnet
+    const natGateways: ec2.CfnNatGateway[] = [];
+    publicSubnets.forEach((publicSubnet, index) => {
+      const natGatewayEip = new ec2.CfnEIP(this, `NatGatewayEIP_${index + 1}`);
+      const natGateway = new ec2.CfnNatGateway(this, `NatGateway_${index + 1}`, {
+        subnetId: publicSubnet.subnetId,
+        allocationId: natGatewayEip.attrAllocationId,
+      });
+      natGateways.push(natGateway);  // Store each NAT Gateway
+    });
+
+// 3.1 Create Private Subnets and Route Tables, associating each with a NAT Gateway
+    const privateSubnets: ec2.Subnet[] = [];
+    PrivateSubnetConfigs.forEach((config, index) => {
+      // Create Private Subnet
       const privateSubnet = new ec2.Subnet(this, `PrivateSubnet_${index + 1}`, {
         vpcId: vpc.vpcId,
         cidrBlock: config.cidrBlock,
         availabilityZone: config.availabilityZone,
       });
-      privateSubnets.push(privateSubnet); // Store the subnet in the array for later use
-    });
+      privateSubnets.push(privateSubnet);
 
-// 3.2 NAT Gateway 1
-loop
-    // Allocate an Elastic IP for the NAT Gateway
-    const natElasticIp = new ec2.CfnEIP(this, 'NatEip', {
-      domain: 'vpc',
-    });
-    // Select a specific public subnet to place the NAT Gateway
-    const publicSubnet1toNAT = vpc.publicSubnets[0];  // Using the first public subnet
+      // Create a Route Table for this Private Subnet
+      const privateRouteTable = new ec2.CfnRouteTable(this, `PrivateRouteTable_${index + 1}`, {
+        vpcId: vpc.vpcId,
+      });
 
-    // Create the NAT Gateway in the selected public subnet with the Elastic IP
-    const natGateway = new ec2.CfnNatGateway(this, 'NatGateway', {
-      subnetId: publicSubnet1toNAT.subnetId,
-      allocationId: natElasticIp.attrAllocationId,
-    });
+      // Add Route to the NAT Gateway in the Private Route Table
+      new ec2.CfnRoute(this, `PrivateSubnetRoute_${index + 1}`, {
+        routeTableId: privateRouteTable.ref,
+        destinationCidrBlock: '0.0.0.0/0', // Route all outbound traffic
+        natGatewayId: natGateways[index % natGateways.length].ref, // Use NAT Gateway in round-robin
+      });
 
-// 3.3 Route Table - loop
-check loop
-    // Create a route in each private subnet route table to use the NAT Gateway for outbound internet traffic
-    vpc.privateSubnets.forEach((privateSubnet, index) => {
-      const privateRouteTable = privateSubnet.routeTable;
-      
-      new ec2.CfnRoute(this, `PrivateSubnetRoute${index}`, {
-        routeTableId: privateRouteTable.routeTableId,
-        destinationCidrBlock: '0.0.0.0/0',  // Route for all traffic
-        natGatewayId: natGateway.ref,       // Target the NAT Gateway
+      // Associate Route Table with Private Subnet
+      new ec2.CfnSubnetRouteTableAssociation(this, `PrivateSubnetRouteTableAssoc_${index + 1}`, {
+        subnetId: privateSubnet.subnetId,
+        routeTableId: privateRouteTable.ref,
       });
     });
 
