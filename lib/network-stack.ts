@@ -183,7 +183,7 @@ Manual Stuff:
 
 // Private Subnets
     const privateSubnets: ec2.CfnSubnet[] = PrivateSubnetConfigs.map((config, index) => {
-      // Private Subnet
+    // Private Subnet
       const privateSubnet = new ec2.CfnSubnet(this, `PrivateSubnet_${index + 1}`, {
         vpcId: vpc.vpcId,
         cidrBlock: config.cidrBlock,
@@ -196,7 +196,7 @@ Manual Stuff:
         ],
       });
 
-      // Route Table
+    // Route Table
       const privateRouteTable = new ec2.CfnRouteTable(this, `PrivateRouteTable_${index + 1}`, {
         vpcId: vpc.vpcId,
         tags: [
@@ -207,14 +207,14 @@ Manual Stuff:
         ],
       });
 
-      // Route to NAT Gateway
+    // Route to NAT Gateway
       new ec2.CfnRoute(this, `PrivateSubnetRouteTarget_${index + 1}`, {
         routeTableId: privateRouteTable.ref,
         destinationCidrBlock: '0.0.0.0/0',                         // Route all outbound traffic
         natGatewayId: natGateways[index % natGateways.length].ref, // Use NAT Gateway in round-robin
       });
 
-      // Associate the Route Table with the Private Subnet
+    // Associate the Route Table with the Private Subnet
       new ec2.CfnSubnetRouteTableAssociation(this, `PrivateSubnetRouteTableAssoc_${index + 1}`, {
         subnetId: privateSubnet.ref,
         routeTableId: privateRouteTable.ref,
@@ -223,16 +223,15 @@ Manual Stuff:
       return privateSubnet; // Add the subnet to the array
     });
 
-/*
 // ------------------------------------ Instances
 
-// 4.1 Use an existing security group
-    const securityGroup_1_all = ec2.SecurityGroup.fromSecurityGroupId(this, 'SecurityGroup', 'launch-wizard-2-all');
+// Use an existing security group
+    const securityGroup_1_all = ec2.SecurityGroup.fromSecurityGroupId(this, 'SecurityGroup', 'sg-0822a6793c27228e3');
 
-// 4.2 Define the existing IAM role for SSM
+// Define the existing IAM role for SSM
     const instanceRole_1 = iam.Role.fromRoleArn(this, 'InstanceRole', 'arn:aws:iam::038462748247:role/SSM-Access-Role');
-    
-// 4.3 Instances
+
+// Instances
     // Define the AMI as Amazon Linux 2023
     const ami = new ec2.AmazonLinuxImage({
       generation: ec2.AmazonLinuxGeneration.AMAZON_LINUX_2023,
@@ -240,31 +239,43 @@ Manual Stuff:
 
     const instances: ec2.Instance[] = [];
     privateSubnets.forEach((privateSubnet, index) => {
+    // Convert CfnSubnet to ISubnet
+      const iSubnet = ec2.Subnet.fromSubnetAttributes(this, `ISubnet_${index + 1}`, {
+        subnetId: privateSubnet.ref,
+        availabilityZone: PrivateSubnetConfigs[index].availabilityZone,
+      });
+
+    // Create an instance in the private subnet
       const instance = new ec2.Instance(this, `Instance_${index + 1}`, {
         vpc,
         instanceType: ec2.InstanceType.of(ec2.InstanceClass.T2, ec2.InstanceSize.MICRO),
         machineImage: ami,
-        keyName: 'key-aws-1',        // SSH key name
+        keyName: 'key-aws-1',         // SSH key
         vpcSubnets: {
-          subnets: [privateSubnet],  // Place the instance in this specific private subnet
+          subnets: [iSubnet],         // Place the instance in this specific private subnet
         },
         securityGroup: securityGroup_1_all,
         role: instanceRole_1,
       });
-      // Save instance in the array for later use
+
+    // Add a Name tag to each instance
+      cdk.Tags.of(instance).add('Name', `PrivateInstance_${index + 1}`);
+
+    // Save instance in the array for later use
       instances.push(instance);
     });
 
+/*
 // ------------------------------------ Loadbalancer
 
-// 5.1 Application Load Balancer
+// Application Load Balancer
     const alb = new elbv2.ApplicationLoadBalancer(this, 'MyALB', {
       vpc,
       internetFacing: true,       // ALB is publicly accessible
       loadBalancerName: 'MyALB',  // Name of the ALB
     });
 
-// 5.2 Security Group for the ALB to allow internal HTTP traffic
+// Security Group for the ALB to allow internal HTTP traffic
     const albSecurityGroup = new ec2.SecurityGroup(this, 'InternalALBSecurityGroup', {
       vpc,
       allowAllOutbound: true,
@@ -281,7 +292,7 @@ Manual Stuff:
     // Attach the security group to the ALB
     alb.addSecurityGroup(albSecurityGroup);
 
-// 5.3 Target Group all Instances
+// Target Group all Instances
     const targetGroup = new elbv2.ApplicationTargetGroup(this, 'MyTargetGroup', {
       vpc,
       port: 80,                                  // Target port for instances
@@ -298,7 +309,7 @@ Manual Stuff:
       targetGroup.addTarget(new elbv2_targets.InstanceIdTarget(instance.instanceId, 80)); // With Port
     });
 
-// 5.4 Add a listener on port 80 for the internal ALB
+// Add a listener on port 80 for the internal ALB
     const listener = alb.addListener('InternalListener', {
       port: 80,                            // Listening on port 80 for HTTP traffic
       defaultTargetGroups: [targetGroup],  // Route traffic to the target group
