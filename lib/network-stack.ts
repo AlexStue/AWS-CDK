@@ -154,7 +154,6 @@ Manual Stuff:
       'Allow inbound HTTPS traffic'
     );
 
-
 // ------------------------------------ Private
 
 // Define configurations for Private Subnets
@@ -163,52 +162,68 @@ Manual Stuff:
       { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.5.0/24' },
     ];
 
+// NAT Gateways
     const natGateways: ec2.CfnNatGateway[] = [];
     publicSubnets.forEach((publicSubnet, index) => {
       const natGatewayEip = new ec2.CfnEIP(this, `NatGatewayEIP_${index + 1}`);
-      
+
       const natGateway = new ec2.CfnNatGateway(this, `NatGateway_${index + 1}`, {
         subnetId: publicSubnet.ref,
         allocationId: natGatewayEip.attrAllocationId,
-        tags: [{
-          key: 'Name',
-          value: `PublicNatGateway_${index + 1}`,
-        }],
+        tags: [
+          {
+            key: 'Name',
+            value: `PublicNatGateway_${index + 1}`,
+          },
+        ],
       });
 
       natGateways.push(natGateway);
     });
-/*
-// 3.3 Private Subnets and Route Tables, associating each with a NAT Gateway
-    const privateSubnets: ec2.Subnet[] = [];
-    PrivateSubnetConfigs.forEach((config, index) => {
-      // Create Private Subnet
-      const privateSubnet = new ec2.Subnet(this, `PrivateSubnet_${index + 1}`, {
+
+// Private Subnets
+    const privateSubnets: ec2.CfnSubnet[] = PrivateSubnetConfigs.map((config, index) => {
+      // Private Subnet
+      const privateSubnet = new ec2.CfnSubnet(this, `PrivateSubnet_${index + 1}`, {
         vpcId: vpc.vpcId,
         cidrBlock: config.cidrBlock,
         availabilityZone: config.availabilityZone,
+        tags: [
+          {
+            key: 'Name',
+            value: `PrivateSubnet_${index + 1}`,
+          },
+        ],
       });
-      privateSubnets.push(privateSubnet);
 
-      // Create a Route Table for this Private Subnet
+      // Route Table
       const privateRouteTable = new ec2.CfnRouteTable(this, `PrivateRouteTable_${index + 1}`, {
         vpcId: vpc.vpcId,
+        tags: [
+          {
+            key: 'Name',
+            value: `PrivateRouteTable_${index + 1}_ToNAT`,
+          },
+        ],
       });
 
-      // Add Route to the NAT Gateway in the Private Route Table
+      // Route to NAT Gateway
       new ec2.CfnRoute(this, `PrivateSubnetRouteTarget_${index + 1}`, {
         routeTableId: privateRouteTable.ref,
         destinationCidrBlock: '0.0.0.0/0',                         // Route all outbound traffic
         natGatewayId: natGateways[index % natGateways.length].ref, // Use NAT Gateway in round-robin
       });
 
-      // Associate Route Table with Private Subnet
+      // Associate the Route Table with the Private Subnet
       new ec2.CfnSubnetRouteTableAssociation(this, `PrivateSubnetRouteTableAssoc_${index + 1}`, {
-        subnetId: privateSubnet.subnetId,
+        subnetId: privateSubnet.ref,
         routeTableId: privateRouteTable.ref,
       });
+
+      return privateSubnet; // Add the subnet to the array
     });
 
+/*
 // ------------------------------------ Instances
 
 // 4.1 Use an existing security group
