@@ -5,7 +5,7 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as elbv2_targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
 import { Construct } from 'constructs';
 
-export class StackArchAll extends cdk.Stack {
+export class MyVpcAppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
@@ -237,16 +237,6 @@ Manual Stuff:
       generation: ec2.AmazonLinuxGeneration.AMAZON_LINUX_2023,
     });
 
-    // Define Startup Script
-    const userData = ec2.UserData.forLinux();
-    userData.addCommands(
-      'sudo yum update -y',
-      'sudo yum install docker -y',
-      'sudo service docker start',
-      'sudo docker pull alexstue/jul24-petclinic:3.0',
-      'sudo docker run -d -p 80:8080 alexstue/jul24-petclinic:3.0'
-    );
-
     const instances: ec2.Instance[] = [];
     privateSubnets.forEach((privateSubnet, index) => {
     // Convert CfnSubnet to ISubnet
@@ -267,9 +257,6 @@ Manual Stuff:
         securityGroup: securityGroup_1_all,
         role: instanceRole_1,
       });
-
-    // Add Startup Script
-    instance.addUserData(userData.render());
 
     // Add a Name tag to each instance
       cdk.Tags.of(instance).add('Name', `PrivateInstance_${index + 1}`);
