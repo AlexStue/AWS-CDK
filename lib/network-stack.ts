@@ -97,7 +97,7 @@ Manual Stuff:
       tags: [
         {
           key: 'Name',
-          value: 'PublicRouteTableToNAT',  // Specify the name you want to assign
+          value: 'PublicRouteTableToIGW',  // Specify the name you want to assign
         },
       ],
     });
@@ -154,7 +154,7 @@ Manual Stuff:
       'Allow inbound HTTPS traffic'
     );
 
-/*
+
 // ------------------------------------ Private
 
 // Define configurations for Private Subnets
@@ -163,18 +163,22 @@ Manual Stuff:
       { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.5.0/24' },
     ];
 
-// NAT Gateway 
-    // In each Public Subnet and allocate an Elastic IP
     const natGateways: ec2.CfnNatGateway[] = [];
     publicSubnets.forEach((publicSubnet, index) => {
       const natGatewayEip = new ec2.CfnEIP(this, `NatGatewayEIP_${index + 1}`);
+      
       const natGateway = new ec2.CfnNatGateway(this, `NatGateway_${index + 1}`, {
-        subnetId: publicSubnet.subnetId,
+        subnetId: publicSubnet.ref,
         allocationId: natGatewayEip.attrAllocationId,
+        tags: [{
+          key: 'Name',
+          value: `PublicNatGateway_${index + 1}`,
+        }],
       });
-      natGateways.push(natGateway);  // Store each NAT Gateway
-    });
 
+      natGateways.push(natGateway);
+    });
+/*
 // 3.3 Private Subnets and Route Tables, associating each with a NAT Gateway
     const privateSubnets: ec2.Subnet[] = [];
     PrivateSubnetConfigs.forEach((config, index) => {
