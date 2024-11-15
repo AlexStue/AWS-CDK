@@ -75,22 +75,23 @@ Manual Stuff:
       vpcId: 'vpc-05d64cdbb3ad8727c', // Replace with your VPC ID
       region: 'eu-central-1',         // Specify the region if needed
     });
+
 // ------------------------------------ Public
 
-    // Define availability zones and CIDR blocks for each public subnet
+// Define configurations for Public Subnets
     const PublicSubnetConfigs = [
       { availabilityZone: 'eu-central-1a', cidrBlock: '10.0.1.0/24' },
       { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.4.0/24' },
     ];
 
-    // Internet Gateway
+// Internet Gateway
     const internetGateway = new ec2.CfnInternetGateway(this, 'InternetGateway');
     new ec2.CfnVPCGatewayAttachment(this, 'AttachGateway', {
       vpcId: vpc.vpcId,
       internetGatewayId: internetGateway.ref,
     });
 
-    // Route Table for public subnets with a default route to the Internet Gateway
+// Route Table
     const publicRouteTable = new ec2.CfnRouteTable(this, 'PublicRouteTable', {
       vpcId: vpc.vpcId,
       tags: [
@@ -101,15 +102,16 @@ Manual Stuff:
       ],
     });
 
+    // Route and Target
     new ec2.CfnRoute(this, 'PublicSubnetRouteTarget', {
       routeTableId: publicRouteTable.ref,
       destinationCidrBlock: '0.0.0.0/0',   // Route for all outbound traffic
       gatewayId: internetGateway.ref,      // Direct to Internet Gateway
     });
 
-    // Create Public Subnets and associate them with the Route Table
+// Public Subnets
     const publicSubnets = PublicSubnetConfigs.map((config, index) => {
-      // Create Public Subnet
+    // Create Public Subnet
       const publicSubnet = new ec2.CfnSubnet(this, `PublicSubnet_${index + 1}`, {
         vpcId: vpc.vpcId,
         cidrBlock: config.cidrBlock,
@@ -123,7 +125,7 @@ Manual Stuff:
         ],
       });
 
-      // Associate each Public Subnet with the public Route Table
+    // Associate each Public Subnet with the public Route Table
       new ec2.CfnSubnetRouteTableAssociation(this, `PublicSubnetRouteTableAssoc_${index + 1}`, {
         subnetId: publicSubnet.ref,
         routeTableId: publicRouteTable.ref,
@@ -132,31 +134,37 @@ Manual Stuff:
       return publicSubnet; // Store each created subnet in the array
     });
 
-/* 
-// 2.5 Security Group that allows all inbound and outbound traffic
-    const securityGroup = new ec2.SecurityGroup(this, 'AllowAllTrafficSG', {
+// Security Group
+    const securityGroup = new ec2.SecurityGroup(this, 'AllowHttpHttpsTrafficSG', {
       vpc,
-      allowAllOutbound: true,  // Allows all outbound traffic by default
-      description: 'Security group that allows all inbound and outbound traffic',
+      description: 'Security group for allowing HTTP and HTTPS traffic only',
+      securityGroupName: 'PublicSubnet_SG_Port_80_443'  // Set the name here
     });
 
-    // Allow all inbound traffic
+    // Allow inbound traffic
     securityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),       // Allows any IPv4 address
-      ec2.Port.allTraffic(),    // Allows all ports and protocols
-      'Allow all inbound traffic'
+      ec2.Peer.anyIpv4(),          // Allows any IPv4 address
+      ec2.Port.tcp(80),            // Port 80 (HTTP)
+      'Allow inbound HTTP traffic'
     );
 
+    securityGroup.addIngressRule(
+      ec2.Peer.anyIpv4(),          // Allows any IPv4 address
+      ec2.Port.tcp(443),           // Port 443 (HTTPS)
+      'Allow inbound HTTPS traffic'
+    );
+
+/*
 // ------------------------------------ Private
 
-// 3.1 Define configurations for private subnets
+// Define configurations for Private Subnets
     const PrivateSubnetConfigs = [
       { availabilityZone: 'eu-central-1a', cidrBlock: '10.0.2.0/24' },
       { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.5.0/24' },
     ];
 
-// 3.2 NAT Gateway in each Public Subnet and allocate an Elastic IP
-    // Define an array to hold the NAT Gateways for each public subnet
+// NAT Gateway 
+    // In each Public Subnet and allocate an Elastic IP
     const natGateways: ec2.CfnNatGateway[] = [];
     publicSubnets.forEach((publicSubnet, index) => {
       const natGatewayEip = new ec2.CfnEIP(this, `NatGatewayEIP_${index + 1}`);
