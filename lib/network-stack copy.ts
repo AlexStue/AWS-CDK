@@ -5,7 +5,7 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as elbv2_targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
 import { Construct } from 'constructs';
 
-export class MyVpcAppStack extends cdk.Stack {
+export class StackArchAll extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
@@ -62,13 +62,55 @@ Manual Stuff:
   5.4 Listener
     Port 80
 
+
+    const region = this.region; // Get the region where the stack is deployed
+
+    // Dynamically fetch VPC based on the region
+    const vpcId = region === 'eu-central-1'
+      ? 'vpc-05d64cdbb3ad8727c'
+      : 'vpc-0example0id0for0new0region'; // Replace with VPC ID for new region
+
+    const vpc = ec2.Vpc.fromLookup(this, 'MyExistingVpc', {
+      vpcId: vpcId,
+    });
+
+    // Define configurations for Public Subnets
+    const PublicSubnetConfigs = region === 'eu-central-1'
+      ? [
+          { availabilityZone: 'eu-central-1a', cidrBlock: '10.0.1.0/24' },
+          { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.4.0/24' },
+        ]
+      : [
+          { availabilityZone: 'us-east-1a', cidrBlock: '10.1.1.0/24' },
+          { availabilityZone: 'us-east-1b', cidrBlock: '10.1.4.0/24' },
+        ];
+
+    // Create Public Subnets
+    const publicSubnets = PublicSubnetConfigs.map((config, index) => {
+      const publicSubnet = new ec2.CfnSubnet(this, `PublicSubnet_${index + 1}`, {
+        vpcId: vpc.vpcId,
+        cidrBlock: config.cidrBlock,
+        availabilityZone: config.availabilityZone,
+        mapPublicIpOnLaunch: true, // Auto-assign public IPs
+        tags: [
+          {
+            key: 'Name',
+            value: `PublicSubnet_${index + 1}_${region}`,
+          },
+        ],
+      });
+
+      return publicSubnet;
+    });
+
+
 */
 // ------------------------------------ VPC
 
 // VPC new
-    //const vpc = new ec2.Vpc(this, 'MyCustomVpc', {
-    //  cidr: '10.0.0.0/16',
-    //});
+//    const vpc = new ec2.Vpc(this, 'MyCustomVpc', {
+//      cidr: '10.0.0.0/16',
+//    });
 
 // VPC existing 
     const vpc = ec2.Vpc.fromLookup(this, 'MyExistingVpc', {
@@ -237,6 +279,16 @@ Manual Stuff:
       generation: ec2.AmazonLinuxGeneration.AMAZON_LINUX_2023,
     });
 
+    // Define Startup Script
+    const userData = ec2.UserData.forLinux();
+    userData.addCommands(
+      'sudo yum update -y',
+      'sudo yum install docker -y',
+      'sudo service docker start',
+      'sudo docker pull alexstue/jul24-petclinic:3.0',
+      'sudo docker run -d -p 80:8080 alexstue/jul24-petclinic:3.0'
+    );
+
     const instances: ec2.Instance[] = [];
     privateSubnets.forEach((privateSubnet, index) => {
     // Convert CfnSubnet to ISubnet
@@ -257,6 +309,9 @@ Manual Stuff:
         securityGroup: securityGroup_1_all,
         role: instanceRole_1,
       });
+
+    // Add Startup Script
+    instance.addUserData(userData.render());
 
     // Add a Name tag to each instance
       cdk.Tags.of(instance).add('Name', `PrivateInstance_${index + 1}`);
