@@ -1,31 +1,18 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
-import { StackArchAll } from '../lib/network-stack';
+import { MultiRegionStack } from '../lib/network-stack';
 
 const app = new cdk.App();
-new StackArchAll(app, 'StackArchAll', {
-  env: {
-    region: 'eu-central-1', // The region where you want to deploy
-    account: '038462748247', // Your AWS account ID
-  }
-});
 
-/*
-const app = new cdk.App();
+// List of regions to deploy the stack
+const regions = ['eu-central-1', 'eu-west-1']; 
+// New Region --> "cdk bootstrap"
 
-// Deploy to eu-central-1
-new MultiRegionStack(app, 'StackEuCentral1', {
-  env: { 
-    region: 'eu-central-1', 
-    account: '123456789012' 
-  }
+regions.forEach(region => {
+  new MultiRegionStack(app, `Stack-${region}`, {
+    env: {
+      region: region, // Specify the region explicitly
+      account: '038462748247', // Your AWS Account ID
+    },
+  });
 });
-
-// Deploy to us-east-1
-new MultiRegionStack(app, 'StackUsEast1', {
-  env: { 
-    region: 'us-east-1', 
-    account: '123456789012' 
-  }
-});
-*/

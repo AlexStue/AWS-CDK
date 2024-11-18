@@ -5,176 +5,19 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as elbv2_targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
 import { Construct } from 'constructs';
 
-export class StackArchAll extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+// Define an interface for the properties passed to the stack (such as the region and account)
+interface MultiRegionStackProps extends cdk.StackProps {
+  region: string;  // Region property
+  account: string; // Account property
+}
+
+export class MultiRegionStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props: MultiRegionStackProps) {
     super(scope, id, props);
 
-// ------------------------------------ Network
-/*
+    const region = props.region;  // Capture the region from props
 
-cdk synth
-cdk deploy
-cdk destroy
-
-Manual Stuff:
-- VPC
-- Security Group
-
-1. VPC
-
-2. Public
-  2.1 AZ Zones & IP
-  2.2 Public Subnet
-  2.2 Internet Gateway
-  2.4 Route Table
-    Add Route: 0.0.0.0/0
-    Add Target: Internet Gateway
-    Associate with Public Subnets
-  2.5 Security Group
-    Inbound: (all)
-    Outbound: (all)
-
-3. Private
-  3.1 AZ Zones & IP
-  3.2 NAT Gateway
-    Subnet: Public Subnet
-    Allocate Elastic IP
-  3.3 Private Subnet
-    Create Subents
-    Create Route Table: 0.0.0.0/0
-    Add Targets to each NAT Gateway in Private Subnets
-    Associate with Private Subents
-
-4. EC2 Instances
-  4.1 Security Group
-  4.2 IAM Role (for SSM)
-  4.3 Instance per Private Subnet
-
-5. Loadbalancer
-  5.1 ALB
-  5.2 Security Group
-    Inbound: 80
-    Outbound: 80
-    Attach to ALB
-  5.3 Target Group
-    Create
-    Register Instances
-  5.4 Listener
-    Port 80
-
-
-    const region = this.region; // Get the region where the stack is deployed
-
-    // Dynamically fetch VPC based on the region
-    const vpcId = region === 'eu-central-1'
-      ? 'vpc-05d64cdbb3ad8727c'
-      : 'vpc-0example0id0for0new0region'; // Replace with VPC ID for new region
-
-    const vpc = ec2.Vpc.fromLookup(this, 'MyExistingVpc', {
-      vpcId: vpcId,
-    });
-
-    // Define configurations for Public Subnets
-    const PublicSubnetConfigs = region === 'eu-central-1'
-      ? [
-          { availabilityZone: 'eu-central-1a', cidrBlock: '10.0.1.0/24' },
-          { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.4.0/24' },
-        ]
-      : [
-          { availabilityZone: 'us-east-1a', cidrBlock: '10.1.1.0/24' },
-          { availabilityZone: 'us-east-1b', cidrBlock: '10.1.4.0/24' },
-        ];
-
-    // Create Public Subnets
-    const publicSubnets = PublicSubnetConfigs.map((config, index) => {
-      const publicSubnet = new ec2.CfnSubnet(this, `PublicSubnet_${index + 1}`, {
-        vpcId: vpc.vpcId,
-        cidrBlock: config.cidrBlock,
-        availabilityZone: config.availabilityZone,
-        mapPublicIpOnLaunch: true, // Auto-assign public IPs
-        tags: [
-          {
-            key: 'Name',
-            value: `PublicSubnet_${index + 1}_${region}`,
-          },
-        ],
-      });
-
-      return publicSubnet;
-    });
-
-
-*/
-// ------------------------------------ VPC
-
-// VPC new
-//    const vpc = new ec2.Vpc(this, 'MyCustomVpc', {
-//      cidr: '10.0.0.0/16',
-//    });
-
-// VPC existing 
-    const vpc = ec2.Vpc.fromLookup(this, 'MyExistingVpc', {
-      vpcId: 'vpc-05d64cdbb3ad8727c', // Replace with your VPC ID
-      region: 'eu-central-1',         // Specify the region if needed
-    });
-
-// ------------------------------------ Public
-
-// Define configurations for Public Subnets
-    const PublicSubnetConfigs = [
-      { availabilityZone: 'eu-central-1a', cidrBlock: '10.0.1.0/24' },
-      { availabilityZone: 'eu-central-1b', cidrBlock: '10.0.4.0/24' },
-    ];
-
-// Internet Gateway
-    const internetGateway = new ec2.CfnInternetGateway(this, 'InternetGateway');
-    new ec2.CfnVPCGatewayAttachment(this, 'AttachGateway', {
-      vpcId: vpc.vpcId,
-      internetGatewayId: internetGateway.ref,
-    });
-
-// Route Table
-    const publicRouteTable = new ec2.CfnRouteTable(this, 'PublicRouteTable', {
-      vpcId: vpc.vpcId,
-      tags: [
-        {
-          key: 'Name',
-          value: 'PublicRouteTableToIGW',  // Specify the name you want to assign
-        },
-      ],
-    });
-
-    // Route and Target
-    new ec2.CfnRoute(this, 'PublicSubnetRouteTarget', {
-      routeTableId: publicRouteTable.ref,
-      destinationCidrBlock: '0.0.0.0/0',   // Route for all outbound traffic
-      gatewayId: internetGateway.ref,      // Direct to Internet Gateway
-    });
-
-// Public Subnets
-    const publicSubnets = PublicSubnetConfigs.map((config, index) => {
-    // Create Public Subnet
-      const publicSubnet = new ec2.CfnSubnet(this, `PublicSubnet_${index + 1}`, {
-        vpcId: vpc.vpcId,
-        cidrBlock: config.cidrBlock,
-        availabilityZone: config.availabilityZone,
-        mapPublicIpOnLaunch: true, // Auto-assign public IPs to instances in the subnet
-        tags: [
-          {
-            key: 'Name',
-            value: `PublicSubnet_${index + 1}`,
-          },
-        ],
-      });
-
-    // Associate each Public Subnet with the public Route Table
-      new ec2.CfnSubnetRouteTableAssociation(this, `PublicSubnetRouteTableAssoc_${index + 1}`, {
-        subnetId: publicSubnet.ref,
-        routeTableId: publicRouteTable.ref,
-      });
-
-      return publicSubnet; // Store each created subnet in the array
-    });
+// ------------------------------------ List
 
 // Security Group
     const securityGroup = new ec2.SecurityGroup(this, 'AllowHttpHttpsTrafficSG', {
@@ -375,8 +218,10 @@ Manual Stuff:
       port: 80,                            // Listening on port 80 for HTTP traffic
       defaultTargetGroups: [targetGroup],  // Route traffic to the target group
     });
-/*
- */
+
+
 
   }
 }
+
+*/
