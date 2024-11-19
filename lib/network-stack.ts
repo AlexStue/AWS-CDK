@@ -1,8 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-//import * as iam from 'aws-cdk-lib/aws-iam';
-//import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
-//import * as elbv2_targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as elbv2_targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
 import { Construct } from 'constructs';
 
 // Define MultiRegionStackProps with a stricter type for env
@@ -30,53 +30,9 @@ cdk destroy -all
 cdk deploy -all --require-approval never
 cdk destroy -all --require-approval never
 
-Manual Stuff:
-- Security Group
-
-1. VPC in Regions
-
-2. Public
-  2.1 AZ Zones & IP
-  2.2 Public Subnet
-  2.2 Internet Gateway
-  2.4 Route Table
-    Add Route: 0.0.0.0/0
-    Add Target: Internet Gateway
-    Associate with Public Subnets
-  2.5 Security Group
-    Inbound: (all)
-    Outbound: (all)
-
-3. Private
-  3.1 AZ Zones & IP
-  3.2 NAT Gateway
-    Subnet: Public Subnet
-    Allocate Elastic IP
-  3.3 Private Subnet
-    Create Subents
-    Create Route Table: 0.0.0.0/0
-    Add Targets to each NAT Gateway in Private Subnets
-    Associate with Private Subents
-
-4. EC2 Instances
-  4.1 Security Group
-  4.2 IAM Role (for SSM)
-  4.3 Instance per Private Subnet
-
-5. Loadbalancer
-  5.1 ALB
-  5.2 Security Group
-    Inbound: 80
-    Outbound: 80
-    Attach to ALB
-  5.3 Target Group
-    Create
-    Register Instances
-  5.4 Listener
-    Port 80
 */
 
-// ------------------------------------ Private
+// ------------------------------------ 
 
 // Define only the VPC
     const vpc = new ec2.CfnVPC(this, `Vpc-${region}`, {
@@ -88,15 +44,9 @@ Manual Stuff:
         },
       ],
     });
-
-    // Optionally output the VPC ID
-    new cdk.CfnOutput(this, `VpcIdOutput-${region}`, {
-      value: vpc.ref,
-      description: `VPC ID for region ${region}`,
-    });
   
 // Availability Zones
-    const publicSubnets: ec2.CfnSubnet[] = [];  // Define an array to hold the public subnets
+    const publicSubnets: ec2.CfnSubnet[] = [];
     const publicSubnetConfigs = [
       { availabilityZone: `${region}a`, cidrBlock: '10.0.1.0/24' },
       { availabilityZone: `${region}b`, cidrBlock: '10.0.4.0/24' },
@@ -137,7 +87,7 @@ Manual Stuff:
 // Public Subnets
     publicSubnetConfigs.forEach((config, index) => {
       // Create Public Subnet
-      const publicSubnet = new ec2.CfnSubnet(this, `PublicSubnet-${region}-${index + 1}`, {
+      const publicSubnet = new ec2.CfnSubnet(this, `PublicSubnet-${region}-Nr${index + 1}`, {
         vpcId: vpc.ref,
         cidrBlock: config.cidrBlock,
         availabilityZone: config.availabilityZone,
@@ -145,13 +95,13 @@ Manual Stuff:
         tags: [
           {
             key: 'Name',
-            value: `PublicSubnet-${region}-${index + 1}`,
+            value: `PublicSubnet-${region}-Nr${index + 1}`,
           },
         ],
       });
 
       // Associate the Public Subnet with the route table
-      new ec2.CfnSubnetRouteTableAssociation(this, `PublicSubnetRouteTableAssoc-${region}-${index + 1}`, {
+      new ec2.CfnSubnetRouteTableAssociation(this, `PublicSubnetRouteTableAssoc-${region}-Nr${index + 1}`, {
         subnetId: publicSubnet.ref,
         routeTableId: publicRouteTable.ref,
       });
@@ -180,11 +130,6 @@ Manual Stuff:
       ],
     });
 
-    new cdk.CfnOutput(this, `SecurityGroupId-${region}`, {
-      value: cfnSecurityGroup.ref,
-      description: `Security Group ID in ${region}`,
-    });
-
 // ------------------------------------ Private
 
 // Define configurations for Private Subnets
@@ -196,15 +141,15 @@ Manual Stuff:
 // Create NAT Gateways in Public Subnets
     const natGateways: ec2.CfnNatGateway[] = [];
     publicSubnets.forEach((publicSubnet, index) => {
-      const natGatewayEip = new ec2.CfnEIP(this, `NatGatewayEIP-${region}-${index + 1}`);
+      const natGatewayEip = new ec2.CfnEIP(this, `NatGatewayEIP-${region}-Nr${index + 1}`);
 
-      const natGateway = new ec2.CfnNatGateway(this, `NatGateway-${region}-${index + 1}`, {
+      const natGateway = new ec2.CfnNatGateway(this, `NatGateway-${region}-Nr${index + 1}`, {
         subnetId: publicSubnet.ref,               // Attach to the public subnet
         allocationId: natGatewayEip.attrAllocationId,
         tags: [
           {
             key: 'Name',
-            value: `PublicNatGateway-${region}-${index + 1}`,
+            value: `PublicNatGateway-${region}-Nr${index + 1}`,
           },
         ],
       });
@@ -214,54 +159,123 @@ Manual Stuff:
 
 // Private Subnets
     const privateSubnets: ec2.CfnSubnet[] = PrivateSubnetConfigs.map((config, index) => {
-      const privateSubnet = new ec2.CfnSubnet(this, `PrivateSubnet-${region}-${index + 1}`, {
-        vpcId: vpc.ref,  // Use the VPC created earlier
+      const privateSubnet = new ec2.CfnSubnet(this, `PrivateSubnet-${region}-Nr${index + 1}`, {
+        vpcId: vpc.ref,
         cidrBlock: config.cidrBlock,
         availabilityZone: config.availabilityZone,
         tags: [
           {
             key: 'Name',
-            value: `PrivateSubnet-${region}-${index + 1}`,
+            value: `PrivateSubnet-${region}-Nr${index + 1}`,
           },
         ],
       });
 
       // Route Table for Private Subnet
-      const privateRouteTable = new ec2.CfnRouteTable(this, `PrivateRouteTable-${region}-${index + 1}`, {
+      const privateRouteTable = new ec2.CfnRouteTable(this, `PrivateRouteTable-${region}-Nr${index + 1}`, {
         vpcId: vpc.ref,  // Use the VPC created earlier
         tags: [
           {
             key: 'Name',
-            value: `PrivateRouteTable-${region}-${index + 1}_ToNAT`,
+            value: `PrivateRouteTable-${region}-Nr${index + 1}_ToNAT`,
           },
         ],
       });
 
       // Route to NAT Gateway (round-robin distribution)
-      new ec2.CfnRoute(this, `PrivateSubnetRouteTarget-${region}-${index + 1}`, {
+      new ec2.CfnRoute(this, `PrivateSubnetRouteTarget-${region}-Nr${index + 1}`, {
         routeTableId: privateRouteTable.ref,
         destinationCidrBlock: '0.0.0.0/0',                         // Route all outbound traffic
         natGatewayId: natGateways[index % natGateways.length].ref, // Use NAT Gateway in round-robin
       });
 
-      // Associate the Route Table with the Private Subnet
-      new ec2.CfnSubnetRouteTableAssociation(this, `PrivateSubnetRouteTableAssoc-${region}-${index + 1}`, {
+      // Associate Route Table with Private Subnet
+      new ec2.CfnSubnetRouteTableAssociation(this, `PrivateSubnetRouteTableAssoc-${region}-Nr${index + 1}`, {
         subnetId: privateSubnet.ref,
         routeTableId: privateRouteTable.ref,
       });
 
-      return privateSubnet; // Add the subnet to the array
+      return privateSubnet;
     });
 
-    // Optionally output the Private Subnet IDs
-    privateSubnets.forEach((subnet, index) => {
-      new cdk.CfnOutput(this, `PrivateSubnetIdOutput-${region}-${index + 1}`, {
-        value: subnet.ref,
-        description: `Private Subnet ID for region ${region}, Subnet ${index + 1}`,
+// ------------------------------------ Instances
+
+    const amiId = new ec2.AmazonLinuxImage({
+      generation: ec2.AmazonLinuxGeneration.AMAZON_LINUX_2023,
+    }).getImage(this).imageId;
+
+    // Define Startup Script (UserData)
+    const userData = ec2.UserData.forLinux();
+    userData.addCommands(
+      'sudo yum update -y',
+      'sudo yum install docker -y',
+      'sudo service docker start',
+      'sudo docker pull alexstue/jul24-petclinic:3.0',
+      'sudo docker run -d -p 80:8080 alexstue/jul24-petclinic:3.0'
+    );
+  
+
+    const instances: ec2.CfnInstance[] = [];
+
+    // Create EC2 instances in private subnets (CfnInstance)
+    privateSubnets.forEach((privateSubnet, index) => {
+      const instance = new ec2.CfnInstance(this, `CfnInstance-${region}-Nr${index + 1}`, {
+        imageId: amiId,
+        instanceType: 't2.micro',
+        keyName: 'key-aws-1',
+        subnetId: privateSubnet.ref,
+        securityGroupIds: [cfnSecurityGroup.ref], // Attach the security group
+        userData: cdk.Fn.base64(userData.render()), // Encode the UserData
+        tags: [
+          {
+            key: 'Name',
+            value: `PrivateInstance-${region}-Nr${index + 1}`,
+          },
+        ],
       });
+
+      instances.push(instance);
+    });
+
+// ------------------------------------ Load Balancer
+
+    const albSecurityGroupId = cfnSecurityGroup.ref;
+
+    const alb = new elbv2.CfnLoadBalancer(this, 'MyALB', {
+      subnets: publicSubnets.map(subnet => subnet.ref),  // Map each subnet to its .ref
+      securityGroups: [cfnSecurityGroup.ref],
+      loadBalancerAttributes: [
+        {
+          key: 'idle_timeout.timeout_seconds',
+          value: '60',
+        },
+      ],
+      scheme: 'internet-facing',
+    });
+
+    // ------------------------------------ Target Group
+    const targetGroup = new elbv2.CfnTargetGroup(this, 'TargetGroup', {
+      vpcId: vpc.ref, // Pass the vpcId from CfnVPC
+      protocol: 'HTTP',
+      port: 80,
+      targetType: 'instance',
+    });
+
+    // ------------------------------------ ALB Listener
+    new elbv2.CfnListener(this, `CfnALBListener-${region}`, {
+      loadBalancerArn: alb.ref,
+      port: 80,
+      defaultActions: [
+        {
+          type: 'forward',
+          targetGroupArn: targetGroup.ref,
+        },
+      ],
     });
 
 
+
+ 
 
   }
 }
