@@ -32,7 +32,7 @@ cdk destroy -all --require-approval never
 
 */
 
-// ------------------------------------ 
+// ------------------------------------ Public
 
 // Define only the VPC
     const vpc = new ec2.CfnVPC(this, `Vpc-${region}`, {
@@ -72,7 +72,7 @@ cdk destroy -all --require-approval never
       tags: [
         {
           key: 'Name',
-          value: `PublicRouteTable-${region}`,
+          value: `PublicRouteTable-${region}-toIGN`,
         },
       ],
     });
@@ -111,7 +111,7 @@ cdk destroy -all --require-approval never
     });
 
 // Create Security Group
-    const cfnSecurityGroup = new ec2.CfnSecurityGroup(this, `CfnSecurityGroup-${region}`, {
+    const cfnSecurityGroup = new ec2.CfnSecurityGroup(this, `SG-${region}-Port-80-443`, {
       vpcId: vpc.ref,
       groupDescription: 'Allow HTTP and HTTPS traffic only',
       securityGroupIngress: [
@@ -177,7 +177,7 @@ cdk destroy -all --require-approval never
         tags: [
           {
             key: 'Name',
-            value: `PrivateRouteTable-${region}-Nr${index + 1}_ToNAT`,
+            value: `PrivateRouteTable-${region}-Nr${index + 1}_toNAT`,
           },
         ],
       });
@@ -200,31 +200,41 @@ cdk destroy -all --require-approval never
 
 // ------------------------------------ Instances
 
+// Mapping für Regionen und Docker-Images
+    const regionImageMap: { [key: string]: string[] } = {
+      'eu-central-1': [
+        "alexstue/simpleweb-1",
+        "alexstue/simpleweb-2"
+      ],
+      'eu-west-1': [
+        "alexstue/simpleweb-3",
+        "alexstue/simpleweb-4"
+      ]
+    };
+
+    const instances: ec2.CfnInstance[] = [];
+    const dockerImages = regionImageMap[region] || [];
+
     const amiId = new ec2.AmazonLinuxImage({
       generation: ec2.AmazonLinuxGeneration.AMAZON_LINUX_2023,
     }).getImage(this).imageId;
 
-    // Define Startup Script (UserData)
-    const userData = ec2.UserData.forLinux();
-    userData.addCommands(
-      'sudo yum update -y',
-      'sudo yum install docker -y',
-      'sudo service docker start',
-      'sudo docker pull alexstue/jul24-petclinic:3.0',
-      'sudo docker run -d -p 80:8080 alexstue/jul24-petclinic:3.0'
-    );
-  
-
-    const instances: ec2.CfnInstance[] = [];
-
-    // Create EC2 instances in private subnets (CfnInstance)
+// instances in private subnets
     privateSubnets.forEach((privateSubnet, index) => {
+      const userData = ec2.UserData.forLinux();
+      userData.addCommands(
+        'sudo yum update -y',
+        'sudo yum install docker -y',
+        'sudo service docker start',
+        `sudo docker pull ${dockerImages[index]}`,
+        `sudo docker run -d -p 80:8080 ${dockerImages[index]}`
+      );
       const instance = new ec2.CfnInstance(this, `CfnInstance-${region}-Nr${index + 1}`, {
         imageId: amiId,
         instanceType: 't2.micro',
         keyName: 'key-aws-1',
         subnetId: privateSubnet.ref,
-        securityGroupIds: [cfnSecurityGroup.ref], // Attach the security group
+        securityGroupIds: [cfnSecurityGroup.ref],
         userData: cdk.Fn.base64(userData.render()), // Encode the UserData
         tags: [
           {
@@ -239,9 +249,8 @@ cdk destroy -all --require-approval never
 
 // ------------------------------------ Load Balancer
 
-    const albSecurityGroupId = cfnSecurityGroup.ref;
-
-    const alb = new elbv2.CfnLoadBalancer(this, 'MyALB', {
+// ALB
+    const alb = new elbv2.CfnLoadBalancer(this, `ALB-${region}`, {
       subnets: publicSubnets.map(subnet => subnet.ref),  // Map each subnet to its .ref
       securityGroups: [cfnSecurityGroup.ref],
       loadBalancerAttributes: [
@@ -253,18 +262,22 @@ cdk destroy -all --require-approval never
       scheme: 'internet-facing',
     });
 
-    // ------------------------------------ Target Group
-    const targetGroup = new elbv2.CfnTargetGroup(this, 'TargetGroup', {
-      vpcId: vpc.ref, // Pass the vpcId from CfnVPC
+// Target Group
+    const targetGroup = new elbv2.CfnTargetGroup(this, `TargetGroup-${region}`, {
+      vpcId: vpc.ref,
       protocol: 'HTTP',
       port: 80,
       targetType: 'instance',
+      targets: instances.map(instance => ({
+        id: instance.ref
+      }))
     });
 
-    // ------------------------------------ ALB Listener
-    new elbv2.CfnListener(this, `CfnALBListener-${region}`, {
+// Listener
+    new elbv2.CfnListener(this, `ALBListener-${region}`, {
       loadBalancerArn: alb.ref,
       port: 80,
+      protocol: 'HTTP',
       defaultActions: [
         {
           type: 'forward',
@@ -273,9 +286,6 @@ cdk destroy -all --require-approval never
       ],
     });
 
-
-
- 
-
+// end
   }
 }
