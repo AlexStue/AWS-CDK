@@ -3,6 +3,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as elbv2_targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
+import * as globalaccelerator from 'aws-cdk-lib/aws-globalaccelerator';
 import { Construct } from 'constructs';
 
 // Define MultiRegionStackProps with a stricter type for env
@@ -14,6 +15,8 @@ interface MultiRegionStackProps extends cdk.StackProps {
 }
 
 export class MultiRegionStack extends cdk.Stack {
+  public readonly alb: elbv2.ApplicationLoadBalancer;
+  public readonly endpointConfiguration: globalaccelerator.CfnEndpointGroup.EndpointConfigurationProperty;
   constructor(scope: Construct, id: string, props: MultiRegionStackProps) {
     super(scope, id, props);
 
@@ -272,6 +275,13 @@ cdk destroy -all --require-approval never
         },
       ],
     });
+
+// ------------------------------------ Global Accelerator
+
+    this.endpointConfiguration = {
+      endpointId: alb.ref,
+      weight: 100,
+    };
 
 // end
   }
