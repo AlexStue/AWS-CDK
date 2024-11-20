@@ -203,12 +203,12 @@ cdk destroy -all --require-approval never
 // Mapping für Regionen und Docker-Images
     const regionImageMap: { [key: string]: string[] } = {
       'eu-central-1': [
-        "alexstue/simpleweb-1",
-        "alexstue/simpleweb-2"
+        "alexstue/simpleweb-1:latest",
+        "alexstue/simpleweb-2:latest"
       ],
       'eu-west-1': [
-        "alexstue/simpleweb-3",
-        "alexstue/simpleweb-4"
+        "alexstue/simpleweb-3:latest",
+        "alexstue/simpleweb-4:latest"
       ]
     };
 
@@ -229,7 +229,7 @@ cdk destroy -all --require-approval never
         `sudo docker pull ${dockerImages[index]}`,
         `sudo docker run -d -p 80:8080 ${dockerImages[index]}`
       );
-      const instance = new ec2.CfnInstance(this, `CfnInstance-${region}-Nr${index + 1}`, {
+      const instance = new ec2.CfnInstance(this, `Instance-${region}-Nr${index + 1}`, {
         imageId: amiId,
         instanceType: 't2.micro',
         keyName: 'key-aws-1',
@@ -245,6 +245,7 @@ cdk destroy -all --require-approval never
       });
 
       instances.push(instance);
+      console.log(`docker pull ${dockerImages[index]}`);
     });
 
 // ------------------------------------ Load Balancer
