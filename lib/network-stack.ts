@@ -15,8 +15,10 @@ interface MultiRegionStackProps extends cdk.StackProps {
 }
 
 export class MultiRegionStack extends cdk.Stack {
-  public readonly alb: elbv2.ApplicationLoadBalancer;
+  public readonly alb: elbv2.CfnLoadBalancer; // Keep it as CfnLoadBalancer
+  public readonly albArn: string; // Expose ALB ARN
   public readonly endpointConfiguration: globalaccelerator.CfnEndpointGroup.EndpointConfigurationProperty;
+  
   constructor(scope: Construct, id: string, props: MultiRegionStackProps) {
     super(scope, id, props);
 
@@ -32,6 +34,11 @@ cdk destroy -all
 
 cdk deploy -all --require-approval never
 cdk destroy -all --require-approval never
+
+Get a free exam retake - if you
+need it.
+Use code AWSRetake2025 at registration
+Schedule your Foundational exam
 
 */
 
@@ -240,8 +247,9 @@ cdk destroy -all --require-approval never
 // ------------------------------------ Load Balancer
 
 // ALB
-    const alb = new elbv2.CfnLoadBalancer(this, `ALB-${region}`, {
-      subnets: publicSubnets.map(subnet => subnet.ref),  // Map each subnet to its .ref
+    // Create ALB
+    this.alb = new elbv2.CfnLoadBalancer(this, `ALB-${props?.env?.region}`, {
+      subnets: publicSubnets.map(subnet => subnet.ref),
       securityGroups: [cfnSecurityGroup.ref],
       loadBalancerAttributes: [
         {
@@ -251,6 +259,9 @@ cdk destroy -all --require-approval never
       ],
       scheme: 'internet-facing',
     });
+
+    // Expose the ALB ARN
+    this.albArn = this.alb.attrLoadBalancerArn; // Use attrLoadBalancerArn to get the ARN
 
 // Target Group
     const targetGroup = new elbv2.CfnTargetGroup(this, `TargetGroup-${region}`, {
@@ -265,7 +276,7 @@ cdk destroy -all --require-approval never
 
 // Listener
     new elbv2.CfnListener(this, `ALBListener-${region}`, {
-      loadBalancerArn: alb.ref,
+      loadBalancerArn: this.alb.ref,
       port: 80,
       protocol: 'HTTP',
       defaultActions: [
@@ -279,7 +290,7 @@ cdk destroy -all --require-approval never
 // ------------------------------------ Global Accelerator
 
     this.endpointConfiguration = {
-      endpointId: alb.ref,
+      endpointId: this.alb.ref,
       weight: 100,
     };
 

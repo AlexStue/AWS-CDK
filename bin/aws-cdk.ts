@@ -19,41 +19,46 @@ regions.forEach(region => {
         region: region,
         account: '038462748247',
       },
+      crossRegionReferences: true, // Enable cross-region references
     });
     stacks.push(stack);
   });
 
 // ------------------------------------ Global Accelerator
 
-// New stack
-    const gaStack = new cdk.Stack(app, 'GlobalAcceleratorStack', {
-      env: {
-        region: 'eu-central-1', // Global Accelerator is created in us-west-2
-        account: '038462748247',
-      },
-    });
+// Create a new stack for Global Accelerator
+const gaStack = new cdk.Stack(app, 'GlobalAcceleratorStack', {
+  env: {
+    region: 'us-west-2', // Global Accelerator is created in us-west-2
+    account: '038462748247',
+  },
+  crossRegionReferences: true, // Enable cross-region references
+});
 
-// Global Accelerator
-    const accelerator = new globalaccelerator.Accelerator(gaStack, 'MyAccelerator', {
-      acceleratorName: 'MyMultiRegionAccelerator',
-      ipAddressType: globalaccelerator.IpAddressType.IPV4,
-    });
+// Create the Global Accelerator
+const accelerator = new globalaccelerator.Accelerator(gaStack, 'MyAccelerator', {
+  acceleratorName: 'MyMultiRegionAccelerator',
+  ipAddressType: globalaccelerator.IpAddressType.IPV4,
+  
+});
 
-// Listener
-    const listener = accelerator.addListener('Listener', {
-      portRanges: [
-        { fromPort: 80 },
-      ],
-    });
+// Create a listener for the Global Accelerator
+const listener = accelerator.addListener('Listener', {
+  portRanges: [
+    { fromPort: 80 },
+    { fromPort: 443 },
+  ],
+});
 
-// Add endpoint groups for each region
-    stacks.forEach((regionalStack, index) => {
-      listener.addEndpointGroup(`EndpointGroup-${regions[index]}`, {
-        endpoints: [
-          new ga_endpoints.ApplicationLoadBalancerEndpoint(regionalStack.alb, {
-            weight: 100,
-            //preserveClientIp: true, // Optional, set to true if you want to preserve client IP
-          }),
-        ],
-      });
-    });
+// Add endpoint groups for each region using ALB ARN
+stacks.forEach((regionalStack, index) => {
+  const endpointGroup = new globalaccelerator.CfnEndpointGroup(gaStack, `EndpointGroup-${regions[index]}`, {
+    listenerArn: listener.listenerArn,
+    endpointGroupRegion: regions[index], // Specify the region for the endpoint group
+    endpointConfigurations: [{
+      endpointId: regionalStack.alb.attrLoadBalancerArn, // Use loadBalancerArn
+      weight: 100,
+      clientIpPreservationEnabled: true,
+    }],
+  });
+});
