@@ -2,7 +2,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as globalaccelerator from 'aws-cdk-lib/aws-globalaccelerator';
 //import * as ga_endpoints from 'aws-cdk-lib/aws-globalaccelerator-endpoints';
-import { MultiRegionStack } from '../lib/network-stack';
+import { MultiRegionStack } from '../../.stackignore/1-ref-network/network-stack';
 
 const app = new cdk.App();
 
